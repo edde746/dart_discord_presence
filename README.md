@@ -245,8 +245,6 @@ DiscordPresence(
 )
 ```
 
-> **Note:** The app name shown in Discord comes from your application name in the Discord Developer Portal, not from code.
-
 ### DiscordStatusDisplayType
 
 Controls which field is displayed in the user's status text in the member list.
