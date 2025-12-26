@@ -1,6 +1,6 @@
 name: dart_discord_presence
 description: "Discord Rich Presence for Dart/Flutter desktop applications. No Flutter dependency required."
-version: 1.0.0
+version: 1.1.0
 homepage: https://github.com/edde746/dart_discord_presence
 repository: https://github.com/edde746/dart_discord_presence
 issue_tracker: https://github.com/edde746/dart_discord_presence/issues

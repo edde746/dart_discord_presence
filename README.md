@@ -215,6 +215,7 @@ DiscordPresence(
   party: DiscordParty(...),           // Party info
   secrets: DiscordSecrets(...),       // Join/spectate secrets
   instance: true,                     // Instanced activity
+  statusDisplayType: DiscordStatusDisplayType.state, // Member list display
 )
 
 // Create modified copy
@@ -245,6 +246,25 @@ DiscordPresence(
 ```
 
 > **Note:** The app name shown in Discord comes from your application name in the Discord Developer Portal, not from code.
+
+### DiscordStatusDisplayType
+
+Controls which field is displayed in the user's status text in the member list.
+
+| Type | Value | Example |
+|------|-------|---------|
+| `name` | 0 | "Listening to Spotify" |
+| `state` | 1 | "Listening to Rick Astley" |
+| `details` | 2 | "Listening to Never Gonna Give You Up" |
+
+```dart
+DiscordPresence(
+  type: DiscordActivityType.listening,
+  details: 'Never Gonna Give You Up',
+  state: 'Rick Astley',
+  statusDisplayType: DiscordStatusDisplayType.state, // Shows "Rick Astley" in member list
+)
+```
 
 ### DiscordTimestamps
 

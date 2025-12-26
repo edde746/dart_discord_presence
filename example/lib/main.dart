@@ -35,7 +35,8 @@ class DiscordRPCDemo extends StatefulWidget {
 
 class _DiscordRPCDemoState extends State<DiscordRPCDemo> {
   // Get one from: https://discord.com/developers/applications
-  static const applicationId = '1453040400578379913'; // Test App ID, don't use in production
+  static const applicationId =
+      '1453040400578379913'; // Test App ID, don't use in production
 
   DiscordRPC? _discord;
   final List<StreamSubscription> _subscriptions = [];
@@ -76,38 +77,48 @@ class _DiscordRPCDemoState extends State<DiscordRPCDemo> {
       _discord = DiscordRPC();
 
       // Set up event listeners
-      _subscriptions.add(_discord!.onReady.listen((event) {
-        _addLog('Connected as ${event.user.username}');
-        setState(() {
-          _isConnected = true;
-          _user = event.user;
-          _status = 'Connected';
-        });
-        // Auto-set initial presence on connection
-        _updatePresence();
-      }));
+      _subscriptions.add(
+        _discord!.onReady.listen((event) {
+          _addLog('Connected as ${event.user.username}');
+          setState(() {
+            _isConnected = true;
+            _user = event.user;
+            _status = 'Connected';
+          });
+          // Auto-set initial presence on connection
+          _updatePresence();
+        }),
+      );
 
-      _subscriptions.add(_discord!.onDisconnected.listen((event) {
-        _addLog('Disconnected: ${event.message}');
-        setState(() {
-          _isConnected = false;
-          _user = null;
-          _status = 'Disconnected';
-        });
-      }));
+      _subscriptions.add(
+        _discord!.onDisconnected.listen((event) {
+          _addLog('Disconnected: ${event.message}');
+          setState(() {
+            _isConnected = false;
+            _user = null;
+            _status = 'Disconnected';
+          });
+        }),
+      );
 
-      _subscriptions.add(_discord!.onError.listen((event) {
-        _addLog('Error: ${event.message}');
-      }));
+      _subscriptions.add(
+        _discord!.onError.listen((event) {
+          _addLog('Error: ${event.message}');
+        }),
+      );
 
-      _subscriptions.add(_discord!.onJoinGame.listen((event) {
-        _addLog('Join game requested: ${event.joinSecret}');
-      }));
+      _subscriptions.add(
+        _discord!.onJoinGame.listen((event) {
+          _addLog('Join game requested: ${event.joinSecret}');
+        }),
+      );
 
-      _subscriptions.add(_discord!.onJoinRequest.listen((event) {
-        _addLog('Join request from ${event.user.username}');
-        _showJoinRequestDialog(event.user);
-      }));
+      _subscriptions.add(
+        _discord!.onJoinRequest.listen((event) {
+          _addLog('Join request from ${event.user.username}');
+          _showJoinRequestDialog(event.user);
+        }),
+      );
 
       // Initialize
       setState(() => _status = 'Initializing...');
@@ -149,18 +160,20 @@ class _DiscordRPCDemoState extends State<DiscordRPCDemo> {
     if (_discord == null || !_isConnected) return;
 
     try {
-      await _discord!.setPresence(DiscordPresence(
-        type: _selectedActivityType,
-        state: _stateController.text,
-        details: _detailsController.text,
-        timestamps: DiscordTimestamps.started(DateTime.now()),
-        largeAsset: _largeImageController.text.isNotEmpty
-            ? DiscordAsset(
-                key: _largeImageController.text,
-                text: _largeTextController.text,
-              )
-            : null,
-      ));
+      await _discord!.setPresence(
+        DiscordPresence(
+          type: _selectedActivityType,
+          state: _stateController.text,
+          details: _detailsController.text,
+          timestamps: DiscordTimestamps.started(DateTime.now()),
+          largeAsset: _largeImageController.text.isNotEmpty
+              ? DiscordAsset(
+                  key: _largeImageController.text,
+                  text: _largeTextController.text,
+                )
+              : null,
+        ),
+      );
       _addLog('Presence updated (${_selectedActivityType.name})');
     } catch (e) {
       _addLog('Update presence error: $e');
@@ -254,122 +267,129 @@ class _DiscordRPCDemoState extends State<DiscordRPCDemo> {
               child: Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'Status: $_status',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 16),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'Status: $_status',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 16),
 
-                      // Connection buttons
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed:
-                                  _isSupported && _discord == null ? _initialize : null,
-                              child: const Text('Initialize'),
+                        // Connection buttons
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: _isSupported && _discord == null
+                                    ? _initialize
+                                    : null,
+                                child: const Text('Initialize'),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: _discord != null ? _shutdown : null,
-                              child: const Text('Shutdown'),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: _discord != null ? _shutdown : null,
+                                child: const Text('Shutdown'),
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
 
-                      // Presence fields
-                      const Text('Rich Presence Settings',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<DiscordActivityType>(
-                        initialValue: _selectedActivityType,
-                        decoration: const InputDecoration(
-                          labelText: 'Activity Type',
-                          border: OutlineInputBorder(),
+                        // Presence fields
+                        const Text(
+                          'Rich Presence Settings',
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        items: DiscordActivityType.values.map((type) {
-                          final names = {
-                            DiscordActivityType.playing: 'Playing',
-                            DiscordActivityType.streaming: 'Streaming',
-                            DiscordActivityType.listening: 'Listening',
-                            DiscordActivityType.watching: 'Watching',
-                            DiscordActivityType.competing: 'Competing',
-                          };
-                          return DropdownMenuItem(
-                            value: type,
-                            child: Text(names[type] ?? type.name),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          if (value != null) {
-                            setState(() => _selectedActivityType = value);
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _stateController,
-                        decoration: const InputDecoration(
-                          labelText: 'State',
-                          hintText: 'e.g., Playing Solo',
-                          border: OutlineInputBorder(),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<DiscordActivityType>(
+                          initialValue: _selectedActivityType,
+                          decoration: const InputDecoration(
+                            labelText: 'Activity Type',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: DiscordActivityType.values.map((type) {
+                            final names = {
+                              DiscordActivityType.playing: 'Playing',
+                              DiscordActivityType.streaming: 'Streaming',
+                              DiscordActivityType.listening: 'Listening',
+                              DiscordActivityType.watching: 'Watching',
+                              DiscordActivityType.competing: 'Competing',
+                            };
+                            return DropdownMenuItem(
+                              value: type,
+                              child: Text(names[type] ?? type.name),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            if (value != null) {
+                              setState(() => _selectedActivityType = value);
+                            }
+                          },
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _detailsController,
-                        decoration: const InputDecoration(
-                          labelText: 'Details',
-                          hintText: 'e.g., In Main Menu',
-                          border: OutlineInputBorder(),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _stateController,
+                          decoration: const InputDecoration(
+                            labelText: 'State',
+                            hintText: 'e.g., Playing Solo',
+                            border: OutlineInputBorder(),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _largeImageController,
-                        decoration: const InputDecoration(
-                          labelText: 'Large Image Key',
-                          hintText: 'Asset key from Discord Dev Portal',
-                          border: OutlineInputBorder(),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _detailsController,
+                          decoration: const InputDecoration(
+                            labelText: 'Details',
+                            hintText: 'e.g., In Main Menu',
+                            border: OutlineInputBorder(),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _largeTextController,
-                        decoration: const InputDecoration(
-                          labelText: 'Large Image Text',
-                          hintText: 'Tooltip text',
-                          border: OutlineInputBorder(),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _largeImageController,
+                          decoration: const InputDecoration(
+                            labelText: 'Large Image Key',
+                            hintText: 'Asset key from Discord Dev Portal',
+                            border: OutlineInputBorder(),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _largeTextController,
+                          decoration: const InputDecoration(
+                            labelText: 'Large Image Text',
+                            hintText: 'Tooltip text',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
 
-                      // Presence buttons
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: _isConnected ? _updatePresence : null,
-                              child: const Text('Update Presence'),
+                        // Presence buttons
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: _isConnected
+                                    ? _updatePresence
+                                    : null,
+                                child: const Text('Update Presence'),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: _isConnected ? _clearPresence : null,
-                              child: const Text('Clear'),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: _isConnected ? _clearPresence : null,
+                                child: const Text('Clear'),
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

@@ -103,6 +103,10 @@ class CommandBuilder {
         activity['instance'] = true;
       }
 
+      if (presence.statusDisplayType != null) {
+        activity['status_display_type'] = presence.statusDisplayType!.value;
+      }
+
       args['activity'] = activity;
     }
 

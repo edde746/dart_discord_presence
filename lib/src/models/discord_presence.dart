@@ -21,6 +21,23 @@ enum DiscordActivityType {
   final int value;
 }
 
+/// Controls which field is displayed in the user's status text in the member list.
+enum DiscordStatusDisplayType {
+  /// Shows the app name (default) - e.g., "Listening to Spotify"
+  name(0),
+
+  /// Shows the state field - e.g., "Listening to Rick Astley"
+  state(1),
+
+  /// Shows the details field - e.g., "Listening to Never Gonna Give You Up"
+  details(2);
+
+  const DiscordStatusDisplayType(this.value);
+
+  /// The integer value sent to Discord's API.
+  final int value;
+}
+
 /// Timestamp configuration for presence display.
 class DiscordTimestamps {
   /// Creates timestamps with explicit Unix second values.
@@ -195,6 +212,7 @@ class DiscordPresence {
     this.party,
     this.secrets,
     this.instance,
+    this.statusDisplayType,
   });
 
   /// Creates an empty presence (clears all fields).
@@ -207,7 +225,8 @@ class DiscordPresence {
         smallAsset = null,
         party = null,
         secrets = null,
-        instance = null;
+        instance = null,
+        statusDisplayType = null;
 
   /// The activity type (playing, listening, watching, etc.).
   final DiscordActivityType type;
@@ -236,6 +255,9 @@ class DiscordPresence {
   /// Whether this activity is an instanced context.
   final bool? instance;
 
+  /// Controls which field is displayed in the member list status text.
+  final DiscordStatusDisplayType? statusDisplayType;
+
   /// Creates a copy with modified fields.
   DiscordPresence copyWith({
     DiscordActivityType? type,
@@ -247,6 +269,7 @@ class DiscordPresence {
     DiscordParty? party,
     DiscordSecrets? secrets,
     bool? instance,
+    DiscordStatusDisplayType? statusDisplayType,
   }) {
     return DiscordPresence(
       type: type ?? this.type,
@@ -258,6 +281,7 @@ class DiscordPresence {
       party: party ?? this.party,
       secrets: secrets ?? this.secrets,
       instance: instance ?? this.instance,
+      statusDisplayType: statusDisplayType ?? this.statusDisplayType,
     );
   }
 
