@@ -41,23 +41,16 @@ enum DiscordStatusDisplayType {
 /// Timestamp configuration for presence display.
 class DiscordTimestamps {
   /// Creates timestamps with explicit Unix second values.
-  const DiscordTimestamps({
-    this.start,
-    this.end,
-  });
+  const DiscordTimestamps({this.start, this.end});
 
   /// Creates a timestamp showing elapsed time from [startTime].
   factory DiscordTimestamps.started(DateTime startTime) {
-    return DiscordTimestamps(
-      start: startTime.millisecondsSinceEpoch ~/ 1000,
-    );
+    return DiscordTimestamps(start: startTime.millisecondsSinceEpoch ~/ 1000);
   }
 
   /// Creates a timestamp showing countdown to [endTime].
   factory DiscordTimestamps.ending(DateTime endTime) {
-    return DiscordTimestamps(
-      end: endTime.millisecondsSinceEpoch ~/ 1000,
-    );
+    return DiscordTimestamps(end: endTime.millisecondsSinceEpoch ~/ 1000);
   }
 
   /// Creates a timestamp showing both elapsed and remaining time.
@@ -75,21 +68,15 @@ class DiscordTimestamps {
   final int? end;
 
   DiscordTimestamps copyWith({int? start, int? end}) {
-    return DiscordTimestamps(
-      start: start ?? this.start,
-      end: end ?? this.end,
-    );
+    return DiscordTimestamps(start: start ?? this.start, end: end ?? this.end);
   }
 }
 
 /// Image asset configuration for presence display.
 class DiscordAsset {
   /// Creates an asset configuration with an asset key.
-  const DiscordAsset({
-    this.key,
-    this.url,
-    this.text,
-  }) : assert(key != null || url != null, 'Either key or url must be provided');
+  const DiscordAsset({this.key, this.url, this.text})
+    : assert(key != null || url != null, 'Either key or url must be provided');
 
   /// Creates an asset from a Discord Developer Portal asset key.
   const DiscordAsset.fromKey(this.key, {this.text}) : url = null;
@@ -116,6 +103,18 @@ class DiscordAsset {
       text: text ?? this.text,
     );
   }
+}
+
+/// A clickable button shown on the presence card (max 2 buttons).
+class DiscordButton {
+  /// Creates a button with a [label] and a [url] to open when clicked.
+  const DiscordButton({required this.label, required this.url});
+
+  /// Text shown on the button (max 32 chars).
+  final String label;
+
+  /// URL opened when the button is clicked.
+  final String url;
 }
 
 /// Party configuration for multiplayer presence.
@@ -171,11 +170,7 @@ enum DiscordPartyPrivacy {
 /// Secrets for join/spectate functionality.
 class DiscordSecrets {
   /// Creates a secrets configuration.
-  const DiscordSecrets({
-    this.match,
-    this.join,
-    this.spectate,
-  });
+  const DiscordSecrets({this.match, this.join, this.spectate});
 
   /// Match secret for match context.
   final String? match;
@@ -186,11 +181,7 @@ class DiscordSecrets {
   /// Secret for spectating the game.
   final String? spectate;
 
-  DiscordSecrets copyWith({
-    String? match,
-    String? join,
-    String? spectate,
-  }) {
+  DiscordSecrets copyWith({String? match, String? join, String? spectate}) {
     return DiscordSecrets(
       match: match ?? this.match,
       join: join ?? this.join,
@@ -213,20 +204,22 @@ class DiscordPresence {
     this.secrets,
     this.instance,
     this.statusDisplayType,
+    this.buttons,
   });
 
   /// Creates an empty presence (clears all fields).
   const DiscordPresence.empty()
-      : type = DiscordActivityType.playing,
-        state = null,
-        details = null,
-        timestamps = null,
-        largeAsset = null,
-        smallAsset = null,
-        party = null,
-        secrets = null,
-        instance = null,
-        statusDisplayType = null;
+    : type = DiscordActivityType.playing,
+      state = null,
+      details = null,
+      timestamps = null,
+      largeAsset = null,
+      smallAsset = null,
+      party = null,
+      secrets = null,
+      instance = null,
+      statusDisplayType = null,
+      buttons = null;
 
   /// The activity type (playing, listening, watching, etc.).
   final DiscordActivityType type;
@@ -258,6 +251,9 @@ class DiscordPresence {
   /// Controls which field is displayed in the member list status text.
   final DiscordStatusDisplayType? statusDisplayType;
 
+  /// Up to 2 clickable buttons shown on the presence card.
+  final List<DiscordButton>? buttons;
+
   /// Creates a copy with modified fields.
   DiscordPresence copyWith({
     DiscordActivityType? type,
@@ -270,6 +266,7 @@ class DiscordPresence {
     DiscordSecrets? secrets,
     bool? instance,
     DiscordStatusDisplayType? statusDisplayType,
+    List<DiscordButton>? buttons,
   }) {
     return DiscordPresence(
       type: type ?? this.type,
@@ -282,6 +279,7 @@ class DiscordPresence {
       secrets: secrets ?? this.secrets,
       instance: instance ?? this.instance,
       statusDisplayType: statusDisplayType ?? this.statusDisplayType,
+      buttons: buttons ?? this.buttons,
     );
   }
 

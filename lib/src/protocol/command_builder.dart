@@ -12,24 +12,17 @@ class CommandBuilder {
   ///
   /// Sent with opcode HANDSHAKE (0) when first connecting.
   static Map<String, dynamic> handshake(String clientId) {
-    return {
-      'v': 1,
-      'client_id': clientId,
-    };
+    return {'v': 1, 'client_id': clientId};
   }
 
   /// Builds a SET_ACTIVITY command to update presence.
   ///
   /// Pass null for [presence] to clear the current activity.
   static Map<String, dynamic> setActivity(DiscordPresence? presence) {
-    final args = <String, dynamic>{
-      'pid': pid,
-    };
+    final args = <String, dynamic>{'pid': pid};
 
     if (presence != null) {
-      final activity = <String, dynamic>{
-        'type': presence.type.value,
-      };
+      final activity = <String, dynamic>{'type': presence.type.value};
 
       if (presence.state != null) {
         activity['state'] = presence.state;
@@ -107,39 +100,34 @@ class CommandBuilder {
         activity['status_display_type'] = presence.statusDisplayType!.value;
       }
 
+      // Buttons (max 2)
+      if (presence.buttons != null && presence.buttons!.isNotEmpty) {
+        activity['buttons'] = presence.buttons!
+            .take(2)
+            .map((b) => {'label': b.label, 'url': b.url})
+            .toList();
+      }
+
       args['activity'] = activity;
     }
 
-    return {
-      'nonce': _generateNonce(),
-      'cmd': 'SET_ACTIVITY',
-      'args': args,
-    };
+    return {'nonce': _generateNonce(), 'cmd': 'SET_ACTIVITY', 'args': args};
   }
 
   /// Builds a response to a join request.
   ///
   /// Set [accept] to true to send SEND_ACTIVITY_JOIN_INVITE,
   /// or false to send CLOSE_ACTIVITY_REQUEST.
-  static Map<String, dynamic> respondToJoinRequest(
-    String userId,
-    bool accept,
-  ) {
+  static Map<String, dynamic> respondToJoinRequest(String userId, bool accept) {
     return {
       'nonce': _generateNonce(),
       'cmd': accept ? 'SEND_ACTIVITY_JOIN_INVITE' : 'CLOSE_ACTIVITY_REQUEST',
-      'args': {
-        'user_id': userId,
-      },
+      'args': {'user_id': userId},
     };
   }
 
   /// Builds a SUBSCRIBE command for activity events.
   static Map<String, dynamic> subscribe(String event) {
-    return {
-      'nonce': _generateNonce(),
-      'cmd': 'SUBSCRIBE',
-      'evt': event,
-    };
+    return {'nonce': _generateNonce(), 'cmd': 'SUBSCRIBE', 'evt': event};
   }
 }
