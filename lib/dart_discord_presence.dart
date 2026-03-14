@@ -34,6 +34,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'src/exceptions/discord_rpc_exception.dart';
 import 'src/ipc/discord_ipc_client.dart';
 import 'src/models/discord_event.dart';
 import 'src/models/discord_presence.dart';
@@ -241,7 +242,11 @@ class DiscordRPC {
   /// Throws [StateError] if not initialized or disposed.
   Future<void> clearPresence() async {
     _ensureReady();
-    await _client.clearPresence();
+    try {
+      await _client.clearPresence();
+    } on DiscordConnectionException {
+      // Cleanup operation — safe to ignore if connection is already gone.
+    }
   }
 
   // ============================================

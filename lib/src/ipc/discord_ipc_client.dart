@@ -205,9 +205,15 @@ class DiscordIpcClient {
   Future<void> clearPresence() async {
     _ensureConnected();
 
-    final command = CommandBuilder.setActivity(null);
-    final frame = IpcFrame.fromJson(DiscordOpcode.frame, command);
-    await _connection!.sendFrame(frame);
+    try {
+      final command = CommandBuilder.setActivity(null);
+      final frame = IpcFrame.fromJson(DiscordOpcode.frame, command);
+      await _connection!.sendFrame(frame);
+    } on DiscordConnectionException {
+      // Connection lost — presence is already gone on Discord's side.
+      // Clean up via existing lifecycle method.
+      await disconnect();
+    }
   }
 
   /// Responds to a join request.

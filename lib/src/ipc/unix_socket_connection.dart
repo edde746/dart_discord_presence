@@ -142,8 +142,14 @@ class UnixSocketConnection implements IpcConnection {
     if (!_isOpen || _socket == null) {
       throw const DiscordStateException('Connection not open');
     }
-    _socket!.add(frame.toBytes());
-    await _socket!.flush();
+    try {
+      _socket!.add(frame.toBytes());
+      await _socket!.flush();
+    } on SocketException catch (e) {
+      throw DiscordConnectionException('Failed to write to socket: $e');
+    } on StateError catch (e) {
+      throw DiscordConnectionException('Failed to write to socket: $e');
+    }
   }
 
   @override
