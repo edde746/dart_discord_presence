@@ -1,26 +1,42 @@
 import 'dart:async';
-import 'dart:ffi';
+import 'dart:collection';
 import 'dart:typed_data';
-
-import 'package:ffi/ffi.dart';
-import 'package:win32/win32.dart';
 
 import '../exceptions/discord_rpc_exception.dart';
 import 'ipc_connection.dart';
 import 'ipc_frame.dart';
+import 'windows_pipe_io.dart';
 
 /// Windows named pipe connection for Discord IPC.
 ///
 /// Discord creates named pipes at: \\.\pipe\discord-ipc-N
 ///
-/// Uses Win32 API for proper bidirectional pipe access since Dart's
-/// File API doesn't support read+write on named pipes.
+/// Pipe I/O is overlapped and polled (see [PipeIo]), so a Discord client that
+/// stops reading or writing delays presence updates but never blocks the
+/// calling isolate, which in a Flutter app is the UI isolate.
 class WindowsPipeConnection implements IpcConnection {
-  int _pipeHandle = INVALID_HANDLE_VALUE;
+  WindowsPipeConnection({
+    PipeIo? io,
+    this.writeTimeout = const Duration(seconds: 5),
+    this.pollInterval = const Duration(milliseconds: 16),
+  }) : _io = io ?? Win32PipeIo();
+
+  /// How long a frame may wait for Discord to drain the pipe before the
+  /// connection is treated as lost. Writes only wait once Discord has left
+  /// a full pipe buffer (64 KiB) unread.
+  final Duration writeTimeout;
+
+  /// How often pending reads and writes are checked for completion.
+  final Duration pollInterval;
+
+  final PipeIo _io;
   final _frameController = StreamController<IpcFrame>.broadcast();
-  final _buffer = BytesBuilder(copy: false);
-  bool _isOpen = false;
+  final _decoder = IpcFrameDecoder();
+  final _writeQueue = Queue<_PendingWrite>();
+  _PendingWrite? _inFlight;
+  Timer? _writeTimer;
   Timer? _pollTimer;
+  bool _isOpen = false;
 
   @override
   bool get isOpen => _isOpen;
@@ -31,204 +47,124 @@ class WindowsPipeConnection implements IpcConnection {
   @override
   Future<void> open() async {
     // Try pipes 0-9
-    for (int i = 0; i < 10; i++) {
-      final path = r'\\.\pipe\discord-ipc-' + i.toString();
-      final pathPtr = path.toNativeUtf16();
-
+    for (var i = 0; i < 10; i++) {
+      if (!_io.open(i)) continue;
       try {
-        // ignore: deprecated_member_use
-        _pipeHandle = CreateFile(
-          pathPtr,
-          GENERIC_READ | GENERIC_WRITE,
-          0, // No sharing
-          nullptr, // Default security
-          OPEN_EXISTING,
-          FILE_ATTRIBUTE_NORMAL,
-          NULL,
-        );
-
-        free(pathPtr);
-
-        if (_pipeHandle != INVALID_HANDLE_VALUE) {
-          _isOpen = true;
-          _startPolling();
-          return;
-        }
-      } catch (e) {
-        free(pathPtr);
+        _io.startRead();
+      } on PipeIoException {
+        _io.close();
         continue;
       }
+      _isOpen = true;
+      _pollTimer = Timer.periodic(pollInterval, (_) => _poll());
+      return;
     }
     throw const DiscordNotRunningException();
   }
 
-  void _startPolling() {
-    // Poll for incoming data every 16ms (~60fps)
-    _pollTimer = Timer.periodic(
-      const Duration(milliseconds: 16),
-      (_) => _pollForData(),
+  @override
+  Future<void> sendFrame(IpcFrame frame) async {
+    if (!_isOpen) {
+      throw const DiscordStateException('Connection not open');
+    }
+    final write = _PendingWrite(frame.toBytes());
+    _writeQueue.add(write);
+    try {
+      _pumpWrites();
+    } on PipeIoException catch (e) {
+      _shutDown(DiscordConnectionException('Failed to write to pipe: $e'));
+    }
+    return write.done.future;
+  }
+
+  void _poll() {
+    if (!_isOpen) return;
+    try {
+      _drainReads();
+      _pumpWrites();
+    } on PipeIoException catch (e) {
+      _shutDown(DiscordConnectionException('Pipe error: $e'));
+    } on DiscordProtocolException catch (e) {
+      _frameController.addError(e);
+      close();
+    }
+  }
+
+  void _drainReads() {
+    while (_isOpen) {
+      final bytes = _io.pollRead();
+      if (bytes == null) return;
+      // Emit before re-posting the read: when Discord writes a last frame and
+      // closes the pipe, the re-post fails, and those frames must not be lost.
+      for (final frame in _decoder.add(bytes)) {
+        _frameController.add(frame);
+      }
+      _io.startRead();
+    }
+  }
+
+  /// Finishes the in-flight write if it completed and starts the next queued
+  /// one. Frames go out one at a time, in order.
+  void _pumpWrites() {
+    while (_isOpen) {
+      final inFlight = _inFlight;
+      if (inFlight != null) {
+        if (!_io.pollWrite()) {
+          _writeTimer ??= Timer(writeTimeout, _onWriteTimeout);
+          return;
+        }
+        _writeTimer?.cancel();
+        _writeTimer = null;
+        _inFlight = null;
+        inFlight.done.complete();
+      }
+      if (_writeQueue.isEmpty) return;
+      final next = _writeQueue.removeFirst();
+      _inFlight = next;
+      _io.startWrite(next.bytes);
+    }
+  }
+
+  void _onWriteTimeout() {
+    _writeTimer = null;
+    _shutDown(
+      DiscordConnectionException(
+        'Discord did not read from the pipe within $writeTimeout',
+      ),
     );
   }
 
-  Future<void> _pollForData() async {
-    if (!_isOpen || _pipeHandle == INVALID_HANDLE_VALUE) return;
-
-    try {
-      // Check if data is available using PeekNamedPipe
-      final bytesAvailable = calloc<DWORD>();
-      final peekResult = PeekNamedPipe(
-        _pipeHandle,
-        nullptr,
-        0,
-        nullptr,
-        bytesAvailable,
-        nullptr,
-      );
-
-      if (peekResult == 0 || bytesAvailable.value == 0) {
-        free(bytesAvailable);
-        return;
-      }
-
-      free(bytesAvailable);
-
-      // Read header if needed
-      if (_buffer.length < IpcFrame.headerSize) {
-        final needed = IpcFrame.headerSize - _buffer.length;
-        final bytes = _readBytes(needed);
-        if (bytes.isNotEmpty) {
-          _buffer.add(bytes);
-        }
-      }
-
-      // If we have header, try to read payload
-      if (_buffer.length >= IpcFrame.headerSize) {
-        final currentBytes = _buffer.toBytes();
-        final header = IpcFrame.parseHeader(currentBytes);
-
-        if (header != null) {
-          if (header.length > IpcFrame.maxPayloadSize) {
-            _frameController.addError(
-              const DiscordProtocolException('Frame payload too large'),
-            );
-            await close();
-            return;
-          }
-
-          final totalNeeded = IpcFrame.headerSize + header.length;
-          if (_buffer.length < totalNeeded) {
-            final payloadNeeded = totalNeeded - _buffer.length;
-            final bytes = _readBytes(payloadNeeded);
-            if (bytes.isNotEmpty) {
-              _buffer.add(bytes);
-            }
-          }
-
-          // Check if we have complete frame
-          if (_buffer.length >= totalNeeded) {
-            final frameBytes = _buffer.toBytes();
-            final payload = Uint8List.fromList(
-              frameBytes.sublist(IpcFrame.headerSize, totalNeeded),
-            );
-
-            final frame = IpcFrame(opcode: header.opcode, payload: payload);
-
-            // Clear buffer and keep remaining bytes
-            _buffer.clear();
-            if (frameBytes.length > totalNeeded) {
-              _buffer.add(frameBytes.sublist(totalNeeded));
-            }
-
-            _frameController.add(frame);
-          }
-        }
-      }
-    } catch (e) {
-      // Pipe closed or error
-      if (_isOpen) {
-        _frameController.addError(
-          DiscordConnectionException('Pipe error: $e'),
-        );
-        await close();
-      }
-    }
-  }
-
-  Uint8List _readBytes(int count) {
-    if (_pipeHandle == INVALID_HANDLE_VALUE) return Uint8List(0);
-
-    final buffer = calloc<Uint8>(count);
-    final bytesRead = calloc<DWORD>();
-
-    try {
-      final result = ReadFile(
-        _pipeHandle,
-        buffer,
-        count,
-        bytesRead,
-        nullptr,
-      );
-
-      if (result == 0 || bytesRead.value == 0) {
-        return Uint8List(0);
-      }
-
-      return Uint8List.fromList(buffer.asTypedList(bytesRead.value));
-    } finally {
-      free(buffer);
-      free(bytesRead);
-    }
-  }
-
   @override
-  Future<void> sendFrame(IpcFrame frame) async {
-    if (!_isOpen || _pipeHandle == INVALID_HANDLE_VALUE) {
-      throw const DiscordStateException('Connection not open');
-    }
+  Future<void> close() =>
+      _shutDown(const DiscordConnectionException('Connection closed'));
 
-    final bytes = frame.toBytes();
-    final buffer = calloc<Uint8>(bytes.length);
-    final bytesWritten = calloc<DWORD>();
-
-    try {
-      buffer.asTypedList(bytes.length).setAll(0, bytes);
-
-      final result = WriteFile(
-        _pipeHandle,
-        buffer,
-        bytes.length,
-        bytesWritten,
-        nullptr,
-      );
-
-      if (result == 0) {
-        throw DiscordConnectionException(
-          'Failed to write to pipe: ${GetLastError()}',
-        );
-      }
-
-      // Flush the pipe
-      FlushFileBuffers(_pipeHandle);
-    } finally {
-      free(buffer);
-      free(bytesWritten);
-    }
-  }
-
-  @override
-  Future<void> close() async {
+  /// Releases the pipe and fails unsent frames with [error].
+  ///
+  /// The frames stream is closed before those failures are delivered, so a
+  /// listener sees the disconnect before any sender sees its error.
+  Future<void> _shutDown(DiscordRPCException error) async {
     _isOpen = false;
     _pollTimer?.cancel();
     _pollTimer = null;
-    _buffer.clear();
+    _writeTimer?.cancel();
+    _writeTimer = null;
+    _io.close();
 
-    if (_pipeHandle != INVALID_HANDLE_VALUE) {
-      CloseHandle(_pipeHandle);
-      _pipeHandle = INVALID_HANDLE_VALUE;
-    }
+    final unsent = [?_inFlight, ..._writeQueue];
+    _inFlight = null;
+    _writeQueue.clear();
 
-    if (!_frameController.isClosed) {
-      await _frameController.close();
+    final closed = _frameController.isClosed ? null : _frameController.close();
+    for (final write in unsent) {
+      write.done.completeError(error);
     }
+    await closed;
   }
+}
+
+class _PendingWrite {
+  _PendingWrite(this.bytes);
+
+  final Uint8List bytes;
+  final done = Completer<void>();
 }

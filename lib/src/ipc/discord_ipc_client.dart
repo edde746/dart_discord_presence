@@ -15,6 +15,10 @@ import 'ipc_frame.dart';
 ///
 /// Handles connection lifecycle, message framing, and event delivery.
 class DiscordIpcClient {
+  DiscordIpcClient({IpcConnection Function()? connectionFactory})
+      : _connectionFactory = connectionFactory ?? IpcConnection.new;
+
+  final IpcConnection Function() _connectionFactory;
   IpcConnection? _connection;
   StreamSubscription<IpcFrame>? _frameSubscription;
   Completer<void>? _readyCompleter;
@@ -46,11 +50,17 @@ class DiscordIpcClient {
       throw const DiscordStateException('Already connected or connecting');
     }
 
-    _readyCompleter = Completer<void>();
+    final readyCompleter = _readyCompleter = Completer<void>();
+    // Taken before the handshake: READY can arrive, and clear
+    // _readyCompleter, before the handshake write is seen to finish, and a
+    // failed handshake write ends the connection, which fails this future
+    // before anything awaits it. ignore() only keeps that from surfacing as
+    // an uncaught error; the await below still throws.
+    final ready = readyCompleter.future..ignore();
     _state = DiscordRPCState.connecting;
 
     try {
-      _connection = IpcConnection();
+      _connection = _connectionFactory();
       await _connection!.open();
 
       // Listen for incoming frames
@@ -66,7 +76,7 @@ class DiscordIpcClient {
       await _connection!.sendFrame(frame);
 
       // Wait for READY event before returning
-      await _readyCompleter!.future;
+      await ready;
 
       // Subscribe to activity events after ready (must be sequential, not concurrent)
       await _subscribeToEvents();

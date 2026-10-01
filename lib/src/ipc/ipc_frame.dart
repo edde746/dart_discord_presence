@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import '../exceptions/discord_rpc_exception.dart';
+
 /// Discord IPC opcodes for the binary frame protocol.
 enum DiscordOpcode {
   /// Initial handshake with client_id and version.
@@ -90,5 +92,49 @@ class IpcFrame {
     final length = byteData.getUint32(4, Endian.little);
 
     return (opcode: DiscordOpcode.fromValue(opcodeValue), length: length);
+  }
+}
+
+/// Reassembles [IpcFrame]s from a byte stream that may split or merge frames.
+class IpcFrameDecoder {
+  Uint8List _pending = Uint8List(0);
+
+  /// Appends [bytes] and returns every frame completed by them, in order.
+  ///
+  /// Throws [DiscordProtocolException] for an oversized payload or an unknown
+  /// opcode; the stream cannot be resynchronised after either.
+  List<IpcFrame> add(Uint8List bytes) {
+    final data = _pending.isEmpty
+        ? bytes
+        : (Uint8List(_pending.length + bytes.length)
+            ..setAll(0, _pending)
+            ..setAll(_pending.length, bytes));
+    final frames = <IpcFrame>[];
+    var offset = 0;
+    while (data.length - offset >= IpcFrame.headerSize) {
+      final ({DiscordOpcode opcode, int length}) header;
+      try {
+        header = IpcFrame.parseHeader(Uint8List.sublistView(data, offset))!;
+      } on ArgumentError catch (e) {
+        throw DiscordProtocolException('Invalid frame header: ${e.message}');
+      }
+      if (header.length > IpcFrame.maxPayloadSize) {
+        throw const DiscordProtocolException('Frame payload too large');
+      }
+      final end = offset + IpcFrame.headerSize + header.length;
+      if (data.length < end) break;
+      frames.add(
+        IpcFrame(
+          opcode: header.opcode,
+          payload: Uint8List.fromList(
+            Uint8List.sublistView(data, offset + IpcFrame.headerSize, end),
+          ),
+        ),
+      );
+      offset = end;
+    }
+    // Copy: [bytes] may be a view over a buffer the caller reuses.
+    _pending = Uint8List.fromList(Uint8List.sublistView(data, offset));
+    return frames;
   }
 }
