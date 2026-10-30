@@ -46,20 +46,15 @@ abstract interface class PipeIo {
 const _statusCancelled = 0xC0000120;
 const _statusBufferOverflow = 0x80000005;
 
-// Not exported as top-level constants by win32 5.10, the lower bound.
-const _errorIoPending = 997;
-const _waitObject0 = 0;
-
 /// Synchronous pipe failures after which no I/O is queued, so the operation's
-/// memory is ours again. Any other code, including a GetLastError value that
-/// another FFI call clobbered (dart-lang/sdk#38832), is treated as possibly
-/// queued: the operation stays pending, and [Win32PipeIo.close] cancels it and
-/// leaks its memory if it never finishes.
+/// memory is ours again. Other failures are treated as possibly queued:
+/// [Win32PipeIo.close] cancels the operation and leaks its memory if it never
+/// finishes.
 const _syncPipeFailures = {
-  6, // ERROR_INVALID_HANDLE
-  109, // ERROR_BROKEN_PIPE
-  232, // ERROR_NO_DATA
-  233, // ERROR_PIPE_NOT_CONNECTED
+  ERROR_INVALID_HANDLE,
+  ERROR_BROKEN_PIPE,
+  ERROR_NO_DATA,
+  ERROR_PIPE_NOT_CONNECTED,
 };
 
 /// Upper bound on waiting for cancelled I/O to finish during [close].
@@ -81,9 +76,9 @@ class Win32PipeIo implements PipeIo {
 
   static const _readBufferSize = 16 * 1024;
 
-  int _handle = INVALID_HANDLE_VALUE;
-  int _readEvent = NULL;
-  int _writeEvent = NULL;
+  HANDLE _handle = HANDLE(nullptr);
+  HANDLE _readEvent = HANDLE(nullptr);
+  HANDLE _writeEvent = HANDLE(nullptr);
   Pointer<OVERLAPPED> _readOverlapped = nullptr;
   Pointer<OVERLAPPED> _writeOverlapped = nullptr;
   Pointer<Uint8> _readBuffer = nullptr;
@@ -96,27 +91,26 @@ class Win32PipeIo implements PipeIo {
   bool open(int index) {
     final path = '$pipeNamePrefix$index'.toNativeUtf16();
     try {
-      // ignore: deprecated_member_use
       _handle = CreateFile(
-        path,
+        PCWSTR(path),
         GENERIC_READ | GENERIC_WRITE,
-        0,
-        nullptr,
+        const FILE_SHARE_MODE(0),
+        null,
         OPEN_EXISTING,
         FILE_FLAG_OVERLAPPED,
-        NULL,
-      );
+        null,
+      ).value;
     } finally {
       free(path);
     }
-    if (_handle == INVALID_HANDLE_VALUE) return false;
+    if (!_handle.isValid) return false;
 
-    _readEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
-    _writeEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+    _readEvent = CreateEvent(null, true, false, null).value;
+    _writeEvent = CreateEvent(null, true, false, null).value;
     _readOverlapped = calloc<OVERLAPPED>();
     _writeOverlapped = calloc<OVERLAPPED>();
     _readBuffer = calloc<Uint8>(_readBufferSize);
-    if (_readEvent == NULL || _writeEvent == NULL) {
+    if (!_readEvent.isValid || !_writeEvent.isValid) {
       close();
       return false;
     }
@@ -128,16 +122,16 @@ class Win32PipeIo implements PipeIo {
     _prepare(_readOverlapped, _readEvent);
     // Pending until proven otherwise; see _syncPipeFailures.
     _readPending = true;
-    if (ReadFile(
-          _handle,
-          _readBuffer,
-          _readBufferSize,
-          nullptr,
-          _readOverlapped,
-        ) ==
-        FALSE) {
-      final error = GetLastError();
-      if (error == _errorIoPending) return;
+    final result = ReadFile(
+      _handle,
+      _readBuffer,
+      _readBufferSize,
+      null,
+      _readOverlapped,
+    );
+    if (!result.value) {
+      final error = result.error;
+      if (error == ERROR_IO_PENDING) return;
       if (_syncPipeFailures.contains(error)) _readPending = false;
       throw _startFailure(error, 'read');
     }
@@ -173,16 +167,16 @@ class Win32PipeIo implements PipeIo {
     _prepare(_writeOverlapped, _writeEvent);
     // Pending until proven otherwise; see _syncPipeFailures.
     _writePending = true;
-    if (WriteFile(
-          _handle,
-          _writeBuffer,
-          _writeLength,
-          nullptr,
-          _writeOverlapped,
-        ) ==
-        FALSE) {
-      final error = GetLastError();
-      if (error == _errorIoPending) return;
+    final result = WriteFile(
+      _handle,
+      _writeBuffer,
+      _writeLength,
+      null,
+      _writeOverlapped,
+    );
+    if (!result.value) {
+      final error = result.error;
+      if (error == ERROR_IO_PENDING) return;
       if (_syncPipeFailures.contains(error)) {
         _writePending = false;
         _releaseWriteBuffer();
@@ -216,21 +210,21 @@ class Win32PipeIo implements PipeIo {
   void close() {
     var readDone = !_readPending;
     var writeDone = !_writePending;
-    if (_handle != INVALID_HANDLE_VALUE) {
+    if (_handle.isValid) {
       if (!readDone || !writeDone) {
-        CancelIoEx(_handle, nullptr);
+        CancelIoEx(_handle, null);
         if (!readDone) readDone = _awaitCancel(_readEvent);
         if (!writeDone) writeDone = _awaitCancel(_writeEvent);
       }
       CloseHandle(_handle);
-      _handle = INVALID_HANDLE_VALUE;
+      _handle = HANDLE(nullptr);
     }
     // The kernel keeps its own reference to an event, so closing these is
     // safe even if an operation outlived the cancel wait.
-    if (_readEvent != NULL) CloseHandle(_readEvent);
-    if (_writeEvent != NULL) CloseHandle(_writeEvent);
-    _readEvent = NULL;
-    _writeEvent = NULL;
+    if (_readEvent.isValid) CloseHandle(_readEvent);
+    if (_writeEvent.isValid) CloseHandle(_writeEvent);
+    _readEvent = HANDLE(nullptr);
+    _writeEvent = HANDLE(nullptr);
     _readPending = false;
     _writePending = false;
 
@@ -249,8 +243,8 @@ class Win32PipeIo implements PipeIo {
     _writeBuffer = nullptr;
   }
 
-  bool _awaitCancel(int event) =>
-      WaitForSingleObject(event, _cancelWaitMs) == _waitObject0;
+  bool _awaitCancel(HANDLE event) =>
+      WaitForSingleObject(event, _cancelWaitMs).value == WAIT_OBJECT_0;
 
   void _releaseWriteBuffer() {
     _free(_writeBuffer);
@@ -262,7 +256,7 @@ class Win32PipeIo implements PipeIo {
     if (pointer != nullptr) free(pointer);
   }
 
-  static void _prepare(Pointer<OVERLAPPED> overlapped, int event) {
+  static void _prepare(Pointer<OVERLAPPED> overlapped, HANDLE event) {
     final ref = overlapped.ref;
     ref.Internal = 0;
     ref.InternalHigh = 0;
@@ -273,8 +267,8 @@ class Win32PipeIo implements PipeIo {
 
   /// The event is set only after the kernel has written Internal and
   /// InternalHigh, so it — not Internal — gates reading the result.
-  static bool _isSignaled(int event) =>
-      WaitForSingleObject(event, 0) == _waitObject0;
+  static bool _isSignaled(HANDLE event) =>
+      WaitForSingleObject(event, 0).value == WAIT_OBJECT_0;
 
   /// NTSTATUS is 32 bits; OVERLAPPED.Internal is pointer-sized.
   static int _statusOf(Pointer<OVERLAPPED> overlapped) =>

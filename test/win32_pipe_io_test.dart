@@ -24,31 +24,31 @@ class _Server {
     final name = '${_prefix}0'.toNativeUtf16();
     try {
       _handle = CreateNamedPipe(
-        name,
+        PCWSTR(name),
         PIPE_ACCESS_DUPLEX,
         PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
         1,
         bufferSize,
         bufferSize,
         0,
-        nullptr,
+        null,
       );
     } finally {
       free(name);
     }
-    if (_handle == INVALID_HANDLE_VALUE) {
+    if (!_handle.isValid) {
       throw StateError('CreateNamedPipe failed');
     }
   }
 
-  late int _handle;
+  late HANDLE _handle;
 
   void write(List<int> bytes) {
     final buffer = calloc<Uint8>(bytes.length);
     final count = calloc<DWORD>();
     try {
       buffer.asTypedList(bytes.length).setAll(0, bytes);
-      if (WriteFile(_handle, buffer, bytes.length, count, nullptr) == FALSE) {
+      if (!WriteFile(_handle, buffer, bytes.length, count, null).value) {
         throw StateError('server write failed');
       }
     } finally {
@@ -62,7 +62,7 @@ class _Server {
     final buffer = calloc<Uint8>(max);
     final count = calloc<DWORD>();
     try {
-      if (ReadFile(_handle, buffer, max, count, nullptr) == FALSE) {
+      if (!ReadFile(_handle, buffer, max, count, null).value) {
         throw StateError('server read failed');
       }
       return Uint8List.fromList(buffer.asTypedList(count.value));
@@ -73,9 +73,9 @@ class _Server {
   }
 
   void close() {
-    if (_handle == INVALID_HANDLE_VALUE) return;
+    if (!_handle.isValid) return;
     CloseHandle(_handle);
-    _handle = INVALID_HANDLE_VALUE;
+    _handle = HANDLE(nullptr);
   }
 }
 

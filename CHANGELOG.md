@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Migrated Windows pipe I/O and native tests to `win32` 6.4.0, allowing applications to use `win32` 6.x without a dependency conflict.
+- Fixed initial overlapped pipe reads failing with `Win32 error 0` by using the error captured in `Win32Result` instead of calling `GetLastError` separately.
+
 ## 1.2.1
 
 - Fixed apps freezing on Windows while Discord is slow to read its IPC pipe. Pipe I/O is now overlapped and never blocks the calling isolate; a frame Discord leaves unread for 5 seconds fails with `DiscordConnectionException` and ends the connection, reported through `onDisconnected`.
